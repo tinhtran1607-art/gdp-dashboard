@@ -1,151 +1,648 @@
+"""
+Dona Invest - XAUUSD Trading System
+Professional trading dashboard for gold (XAUUSD) analysis
+"""
+
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import numpy as np
+from datetime import datetime, timedelta
+import sys
+sys.path.insert(0, '/workspace')
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+from src.data_fetcher import XAUUSDDataFetcher, generate_sample_data
+from src.indicators import TechnicalIndicators, analyze_trend
+from src.signals import SignalGenerator, SignalType, SignalStrength
+from src.risk_manager import RiskManager, PositionType
+from src.backtester import Backtester, compare_strategies
+from src.charts import (
+    create_candlestick_chart,
+    create_indicator_chart,
+    create_bollinger_chart,
+    create_equity_curve,
+    create_drawdown_chart,
+    create_trade_distribution,
+    create_signal_chart
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+st.set_page_config(
+    page_title="Dona Invest - XAUUSD Trading",
+    page_icon="🥇",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #FFD700;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #9E9E9E;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background-color: #1E3A5F;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 4px solid #FFD700;
+    }
+    .signal-buy {
+        background-color: rgba(0, 200, 83, 0.2);
+        padding: 0.5rem;
+        border-radius: 5px;
+        border-left: 4px solid #00C853;
+    }
+    .signal-sell {
+        background-color: rgba(255, 82, 82, 0.2);
+        padding: 0.5rem;
+        border-radius: 5px;
+        border-left: 4px solid #FF5252;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+@st.cache_data(ttl=300)
+def load_data(period: str = "1y", interval: str = "1d", use_sample: bool = False):
+    """Load XAUUSD data with caching"""
+    if use_sample:
+        df = generate_sample_data(365)
+    else:
+        fetcher = XAUUSDDataFetcher()
+        df = fetcher.get_historical_data(period=period, interval=interval)
+        
+        if df.empty:
+            st.warning("Unable to fetch live data, using sample data instead.")
+            df = generate_sample_data(365)
+    
+    indicators = TechnicalIndicators(df)
+    df = indicators.add_all_indicators()
+    
+    return df
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+@st.cache_data(ttl=60)
+def get_current_price_info():
+    """Get current price information"""
+    fetcher = XAUUSDDataFetcher()
+    return fetcher.get_current_price()
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+
+def render_header():
+    """Render the main header"""
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<p class="main-header">🥇 DONA INVEST</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-header">Professional XAUUSD Trading System</p>', unsafe_allow_html=True)
+
+
+def render_price_overview(df: pd.DataFrame):
+    """Render price overview section"""
+    current_price = df['close'].iloc[-1]
+    prev_price = df['close'].iloc[-2]
+    change = current_price - prev_price
+    change_pct = (change / prev_price) * 100
+    
+    high_24h = df['high'].iloc[-1]
+    low_24h = df['low'].iloc[-1]
+    
+    analysis = analyze_trend(df)
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        st.metric(
+            label="XAUUSD Price",
+            value=f"${current_price:,.2f}",
+            delta=f"{change:+.2f} ({change_pct:+.2f}%)"
+        )
+    
+    with col2:
+        st.metric(
+            label="24H High",
+            value=f"${high_24h:,.2f}"
+        )
+    
+    with col3:
+        st.metric(
+            label="24H Low",
+            value=f"${low_24h:,.2f}"
+        )
+    
+    with col4:
+        trend_color = "🟢" if analysis['trend'] == 'BULLISH' else "🔴" if analysis['trend'] == 'BEARISH' else "🟡"
+        st.metric(
+            label="Trend",
+            value=f"{trend_color} {analysis['trend']}"
+        )
+    
+    with col5:
+        st.metric(
+            label="Strength",
+            value=f"{analysis['strength']}%"
+        )
+
+
+def render_sidebar():
+    """Render sidebar controls"""
+    with st.sidebar:
+        st.markdown("### ⚙️ Settings")
+        
+        st.markdown("#### 📊 Data Settings")
+        use_sample = st.checkbox("Use Sample Data", value=False, 
+                                help="Use generated sample data instead of live data")
+        
+        period = st.selectbox(
+            "Data Period",
+            options=["1mo", "3mo", "6mo", "1y", "2y"],
+            index=3
+        )
+        
+        interval = st.selectbox(
+            "Interval",
+            options=["1h", "1d", "1wk"],
+            index=1
+        )
+        
+        st.markdown("---")
+        st.markdown("#### 📈 Indicators")
+        
+        show_sma = st.checkbox("SMA (20, 50)", value=True)
+        show_ema = st.checkbox("EMA (12, 26)", value=False)
+        show_bb = st.checkbox("Bollinger Bands", value=True)
+        
+        st.markdown("---")
+        st.markdown("#### 💰 Risk Management")
+        
+        account_balance = st.number_input(
+            "Account Balance ($)",
+            min_value=100,
+            max_value=1000000,
+            value=10000,
+            step=1000
+        )
+        
+        risk_per_trade = st.slider(
+            "Risk per Trade (%)",
+            min_value=0.5,
+            max_value=5.0,
+            value=2.0,
+            step=0.5
+        )
+        
+        st.markdown("---")
+        st.markdown("#### ℹ️ About")
+        st.markdown("""
+        **Dona Invest** is a professional trading system for XAUUSD (Gold).
+        
+        Features:
+        - Real-time price data
+        - Technical analysis
+        - Trading signals
+        - Risk management
+        - Backtesting
+        """)
+        
+        return {
+            'use_sample': use_sample,
+            'period': period,
+            'interval': interval,
+            'show_sma': show_sma,
+            'show_ema': show_ema,
+            'show_bb': show_bb,
+            'account_balance': account_balance,
+            'risk_per_trade': risk_per_trade
+        }
+
+
+def render_dashboard_tab(df: pd.DataFrame, settings: dict):
+    """Render main dashboard tab"""
+    render_price_overview(df)
+    
+    st.markdown("---")
+    
+    indicators = []
+    if settings['show_sma']:
+        indicators.extend(['sma_20', 'sma_50'])
+    if settings['show_ema']:
+        indicators.extend(['ema_12', 'ema_26'])
+    
+    chart = create_candlestick_chart(
+        df.tail(100),
+        title="XAUUSD Price Chart",
+        show_volume=True,
+        indicators=indicators
+    )
+    st.plotly_chart(chart, use_container_width=True)
+    
+    if settings['show_bb']:
+        bb_chart = create_bollinger_chart(df.tail(100))
+        st.plotly_chart(bb_chart, use_container_width=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### RSI Indicator")
+        rsi_chart = create_indicator_chart(df.tail(100), 'rsi')
+        st.plotly_chart(rsi_chart, use_container_width=True)
+    
+    with col2:
+        st.markdown("### MACD Indicator")
+        macd_chart = create_indicator_chart(df.tail(100), 'macd')
+        st.plotly_chart(macd_chart, use_container_width=True)
+
+
+def render_signals_tab(df: pd.DataFrame):
+    """Render trading signals tab"""
+    st.markdown("### 📊 Trading Signals")
+    
+    signal_gen = SignalGenerator(df)
+    signals, summary = signal_gen.generate_combined_signals()
+    recommendation = signal_gen.get_current_recommendation()
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Signals", summary['total_signals'])
+    with col2:
+        st.metric("Buy Signals", summary['buy_signals'])
+    with col3:
+        st.metric("Sell Signals", summary['sell_signals'])
+    with col4:
+        st.metric("Avg Confidence", f"{summary['avg_confidence']:.1%}")
+    
+    st.markdown("---")
+    
+    st.markdown("### 🎯 Current Recommendation")
+    
+    if recommendation['action'] == 'BUY':
+        st.success(f"**{recommendation['action']}** - {recommendation['reason']} (Confidence: {recommendation['confidence']:.1%})")
+    elif recommendation['action'] == 'SELL':
+        st.error(f"**{recommendation['action']}** - {recommendation['reason']} (Confidence: {recommendation['confidence']:.1%})")
+    else:
+        st.warning(f"**{recommendation['action']}** - {recommendation['reason']}")
+    
+    st.markdown("---")
+    
+    if signals:
+        signal_chart = create_signal_chart(df.tail(50), signals[:20])
+        st.plotly_chart(signal_chart, use_container_width=True)
+    
+    st.markdown("### 📋 Recent Signals")
+    
+    if signals:
+        signal_data = []
+        for s in signals[:15]:
+            signal_data.append({
+                'Time': s.timestamp.strftime('%Y-%m-%d %H:%M') if hasattr(s.timestamp, 'strftime') else str(s.timestamp),
+                'Type': s.type.value,
+                'Strength': s.strength.value,
+                'Price': f"${s.price:,.2f}",
+                'Strategy': s.strategy,
+                'Reason': s.reason,
+                'Confidence': f"{s.confidence:.1%}",
+                'Stop Loss': f"${s.stop_loss:,.2f}" if s.stop_loss else "N/A",
+                'Take Profit': f"${s.take_profit:,.2f}" if s.take_profit else "N/A"
+            })
+        
+        df_signals = pd.DataFrame(signal_data)
+        st.dataframe(df_signals, use_container_width=True, hide_index=True)
+    else:
+        st.info("No signals detected in the current data.")
+
+
+def render_analysis_tab(df: pd.DataFrame):
+    """Render technical analysis tab"""
+    st.markdown("### 📈 Technical Analysis")
+    
+    analysis = analyze_trend(df)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Trend Analysis")
+        
+        if analysis['trend'] == 'BULLISH':
+            st.success(f"**Overall Trend: {analysis['trend']}** (Strength: {analysis['strength']}%)")
+        elif analysis['trend'] == 'BEARISH':
+            st.error(f"**Overall Trend: {analysis['trend']}** (Strength: {analysis['strength']}%)")
+        else:
+            st.warning(f"**Overall Trend: {analysis['trend']}** (Strength: {analysis['strength']}%)")
+        
+        st.markdown("#### Indicator Signals")
+        for signal in analysis['signals']:
+            indicator, direction, description = signal
+            if direction in ['BULLISH', 'OVERSOLD']:
+                st.markdown(f"🟢 **{indicator}**: {description}")
+            elif direction in ['BEARISH', 'OVERBOUGHT']:
+                st.markdown(f"🔴 **{indicator}**: {description}")
+            else:
+                st.markdown(f"🟡 **{indicator}**: {description}")
+    
+    with col2:
+        st.markdown("#### Key Levels")
+        
+        current_price = df['close'].iloc[-1]
+        indicators_obj = TechnicalIndicators(df)
+        pivots = indicators_obj.add_pivot_points()
+        
+        levels_data = {
+            'Level': ['Current Price', 'Pivot', 'R1', 'R2', 'R3', 'S1', 'S2', 'S3'],
+            'Price': [
+                f"${current_price:,.2f}",
+                f"${pivots['pivot']:,.2f}",
+                f"${pivots['r1']:,.2f}",
+                f"${pivots['r2']:,.2f}",
+                f"${pivots['r3']:,.2f}",
+                f"${pivots['s1']:,.2f}",
+                f"${pivots['s2']:,.2f}",
+                f"${pivots['s3']:,.2f}"
+            ]
+        }
+        
+        st.dataframe(pd.DataFrame(levels_data), use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    st.markdown("#### Price Statistics")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Current Price", f"${df['close'].iloc[-1]:,.2f}")
+        st.metric("Open", f"${df['open'].iloc[-1]:,.2f}")
+    
+    with col2:
+        st.metric("High", f"${df['high'].iloc[-1]:,.2f}")
+        st.metric("Low", f"${df['low'].iloc[-1]:,.2f}")
+    
+    with col3:
+        if 'rsi' in df.columns:
+            st.metric("RSI (14)", f"{df['rsi'].iloc[-1]:.1f}")
+        if 'atr' in df.columns:
+            st.metric("ATR (14)", f"${df['atr'].iloc[-1]:,.2f}")
+    
+    with col4:
+        if 'sma_20' in df.columns:
+            st.metric("SMA 20", f"${df['sma_20'].iloc[-1]:,.2f}")
+        if 'sma_50' in df.columns:
+            st.metric("SMA 50", f"${df['sma_50'].iloc[-1]:,.2f}")
+
+
+def render_risk_tab(df: pd.DataFrame, settings: dict):
+    """Render risk management tab"""
+    st.markdown("### 💰 Risk Management")
+    
+    risk_manager = RiskManager(
+        account_balance=settings['account_balance'],
+        max_risk_per_trade=settings['risk_per_trade']
+    )
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Position Size Calculator")
+        
+        current_price = float(df['close'].iloc[-1])
+        atr_value = float(df['atr'].iloc[-1]) if not pd.isna(df['atr'].iloc[-1]) else current_price * 0.01
+        
+        entry_price = st.number_input(
+            "Entry Price ($)",
+            min_value=100.0,
+            max_value=10000.0,
+            value=current_price,
+            step=1.0
+        )
+        
+        default_sl = max(100.0, entry_price - atr_value * 2)
+        stop_loss = st.number_input(
+            "Stop Loss ($)",
+            min_value=100.0,
+            max_value=10000.0,
+            value=default_sl,
+            step=1.0
+        )
+        
+        if st.button("Calculate Position Size"):
+            result = risk_manager.calculate_position_size(entry_price, stop_loss)
+            
+            st.markdown("#### Results")
+            st.metric("Recommended Lot Size", f"{result['lot_size']:.2f} lots")
+            st.metric("Risk Amount", f"${result['risk_amount']:,.2f}")
+            st.metric("Margin Required", f"${result['margin_required']:,.2f}")
+            st.metric("Position Value", f"${result['position_value']:,.2f}")
+            
+            st.markdown("#### Take Profit Levels")
+            for ratio, price in result['risk_reward_info'].items():
+                st.write(f"**{ratio}**: ${price:,.2f}")
+    
+    with col2:
+        st.markdown("#### Risk Metrics")
+        
+        risk_metrics = risk_manager.get_risk_metrics(df)
+        
+        st.metric("Annual Volatility", f"{risk_metrics['volatility_annual']:.2f}%")
+        st.metric("Sharpe Ratio", f"{risk_metrics['sharpe_ratio']:.2f}")
+        st.metric("Max Drawdown", f"{risk_metrics['max_drawdown']:.2f}%")
+        st.metric("VaR (95%)", f"{risk_metrics['var_95']:.2f}%")
+        st.metric("Avg Daily Return", f"{risk_metrics['avg_daily_return']:.3f}%")
+        st.metric("Best Day", f"{risk_metrics['best_day']:.2f}%")
+        st.metric("Worst Day", f"{risk_metrics['worst_day']:.2f}%")
+
+
+def render_backtest_tab(df: pd.DataFrame, settings: dict):
+    """Render backtesting tab"""
+    st.markdown("### 🔬 Strategy Backtesting")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        strategy = st.selectbox(
+            "Select Strategy",
+            options=["MA Crossover", "RSI", "MACD", "Bollinger Bands", "Compare All"]
+        )
+        
+        initial_balance = st.number_input(
+            "Initial Balance ($)",
+            min_value=1000,
+            max_value=100000,
+            value=settings['account_balance'],
+            step=1000
+        )
+        
+        run_backtest = st.button("🚀 Run Backtest", type="primary")
+    
+    if run_backtest:
+        with st.spinner("Running backtest..."):
+            backtester = Backtester(df, initial_balance)
+            
+            if strategy == "Compare All":
+                results = compare_strategies(df, initial_balance)
+                
+                st.markdown("### Strategy Comparison")
+                
+                comparison_data = []
+                for name, result in results.items():
+                    comparison_data.append({
+                        'Strategy': name,
+                        'Total Return': f"{result.total_return_percent:.2f}%",
+                        'Win Rate': f"{result.win_rate:.1f}%",
+                        'Profit Factor': f"{result.profit_factor:.2f}",
+                        'Max Drawdown': f"{result.max_drawdown_percent:.2f}%",
+                        'Sharpe Ratio': f"{result.sharpe_ratio:.2f}",
+                        'Total Trades': result.total_trades
+                    })
+                
+                st.dataframe(pd.DataFrame(comparison_data), use_container_width=True, hide_index=True)
+                
+                best_strategy = max(results.items(), key=lambda x: x[1].total_return_percent)
+                st.success(f"**Best Strategy: {best_strategy[0]}** with {best_strategy[1].total_return_percent:.2f}% return")
+                
+            else:
+                if strategy == "MA Crossover":
+                    result = backtester.run_ma_crossover_strategy()
+                elif strategy == "RSI":
+                    result = backtester.run_rsi_strategy()
+                elif strategy == "MACD":
+                    result = backtester.run_macd_strategy()
+                else:
+                    result = backtester.run_bollinger_strategy()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total Return", f"${result.total_return:,.2f}", 
+                             f"{result.total_return_percent:+.2f}%")
+                with col2:
+                    st.metric("Win Rate", f"{result.win_rate:.1f}%")
+                with col3:
+                    st.metric("Profit Factor", f"{result.profit_factor:.2f}")
+                with col4:
+                    st.metric("Max Drawdown", f"{result.max_drawdown_percent:.2f}%")
+                
+                st.markdown("---")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### Equity Curve")
+                    equity_chart = create_equity_curve(result.equity_curve, f"{strategy} Equity Curve")
+                    st.plotly_chart(equity_chart, use_container_width=True)
+                
+                with col2:
+                    st.markdown("#### Drawdown")
+                    dd_chart = create_drawdown_chart(result.equity_curve)
+                    st.plotly_chart(dd_chart, use_container_width=True)
+                
+                if result.trades:
+                    st.markdown("#### Trade Distribution")
+                    trade_chart = create_trade_distribution(result.trades)
+                    st.plotly_chart(trade_chart, use_container_width=True)
+                
+                st.markdown("### Detailed Statistics")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("#### Performance")
+                    st.write(f"Initial Balance: ${result.initial_balance:,.2f}")
+                    st.write(f"Final Balance: ${result.final_balance:,.2f}")
+                    st.write(f"Total Return: {result.total_return_percent:.2f}%")
+                    st.write(f"Sharpe Ratio: {result.sharpe_ratio:.2f}")
+                
+                with col2:
+                    st.markdown("#### Trade Statistics")
+                    st.write(f"Total Trades: {result.total_trades}")
+                    st.write(f"Winning Trades: {result.winning_trades}")
+                    st.write(f"Losing Trades: {result.losing_trades}")
+                    st.write(f"Win Rate: {result.win_rate:.1f}%")
+                
+                with col3:
+                    st.markdown("#### P&L Analysis")
+                    st.write(f"Avg Trade P&L: ${result.avg_trade_pnl:.2f}")
+                    st.write(f"Avg Win: ${result.avg_win:.2f}")
+                    st.write(f"Avg Loss: ${result.avg_loss:.2f}")
+                    st.write(f"Largest Win: ${result.largest_win:.2f}")
+                    st.write(f"Largest Loss: ${result.largest_loss:.2f}")
+                
+                if result.trades:
+                    st.markdown("### Trade History")
+                    
+                    trade_data = []
+                    for t in result.trades[-20:]:
+                        trade_data.append({
+                            'Entry Date': t.entry_date.strftime('%Y-%m-%d') if hasattr(t.entry_date, 'strftime') else str(t.entry_date),
+                            'Exit Date': t.exit_date.strftime('%Y-%m-%d') if hasattr(t.exit_date, 'strftime') else str(t.exit_date),
+                            'Type': t.trade_type,
+                            'Entry': f"${t.entry_price:,.2f}",
+                            'Exit': f"${t.exit_price:,.2f}",
+                            'P&L': f"${t.pnl:.2f}",
+                            'Result': t.result.value,
+                            'Reason': t.reason
+                        })
+                    
+                    st.dataframe(pd.DataFrame(trade_data), use_container_width=True, hide_index=True)
+
+
+def main():
+    """Main application entry point"""
+    render_header()
+    
+    settings = render_sidebar()
+    
+    with st.spinner("Loading data..."):
+        df = load_data(
+            period=settings['period'],
+            interval=settings['interval'],
+            use_sample=settings['use_sample']
+        )
+    
+    if df.empty:
+        st.error("Unable to load data. Please try again or use sample data.")
+        return
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Dashboard",
+        "📈 Signals",
+        "🔍 Analysis",
+        "💰 Risk",
+        "🔬 Backtest"
+    ])
+    
+    with tab1:
+        render_dashboard_tab(df, settings)
+    
+    with tab2:
+        render_signals_tab(df)
+    
+    with tab3:
+        render_analysis_tab(df)
+    
+    with tab4:
+        render_risk_tab(df, settings)
+    
+    with tab5:
+        render_backtest_tab(df, settings)
+    
+    st.markdown("---")
+    st.markdown(
+        "<p style='text-align: center; color: #9E9E9E;'>© 2024 Dona Invest - Professional XAUUSD Trading System</p>",
+        unsafe_allow_html=True
     )
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
 
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+if __name__ == "__main__":
+    main()
