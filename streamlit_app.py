@@ -24,6 +24,7 @@ from src.charts import (
     create_trade_distribution,
     create_signal_chart
 )
+from src.mt5_connector import get_mt5_connector, OrderType, MT5SimulatorConnector
 
 st.set_page_config(
     page_title="Dona Invest - XAUUSD Trading",
@@ -597,6 +598,219 @@ def render_backtest_tab(df: pd.DataFrame, settings: dict):
                     st.dataframe(pd.DataFrame(trade_data), use_container_width=True, hide_index=True)
 
 
+def render_trading_tab(df: pd.DataFrame, settings: dict):
+    """Render MT5 trading tab"""
+    st.markdown("### 🤖 Live Trading - MT5")
+    
+    if 'mt5_connector' not in st.session_state:
+        st.session_state.mt5_connector = None
+        st.session_state.mt5_connected = False
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        use_demo = st.checkbox("Use Demo Mode", value=True, 
+                              help="Use simulated trading instead of real MT5")
+    
+    with col2:
+        if st.button("🔌 Connect MT5", type="primary"):
+            with st.spinner("Connecting..."):
+                connector = get_mt5_connector(use_simulator=use_demo)
+                success, message = connector.connect()
+                
+                if success:
+                    st.session_state.mt5_connector = connector
+                    st.session_state.mt5_connected = True
+                    st.success(message)
+                else:
+                    st.error(message)
+    
+    with col3:
+        if st.button("🔌 Disconnect"):
+            if st.session_state.mt5_connector:
+                st.session_state.mt5_connector.disconnect()
+                st.session_state.mt5_connected = False
+                st.session_state.mt5_connector = None
+                st.info("Disconnected from MT5")
+    
+    st.markdown("---")
+    
+    if st.session_state.mt5_connected and st.session_state.mt5_connector:
+        connector = st.session_state.mt5_connector
+        
+        account = connector.get_account_info()
+        if account:
+            st.markdown("### 📊 Account Information")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Balance", f"${account.balance:,.2f}")
+            with col2:
+                st.metric("Equity", f"${account.equity:,.2f}")
+            with col3:
+                profit_delta = f"{account.profit:+,.2f}" if account.profit != 0 else "0.00"
+                st.metric("Floating P/L", f"${account.profit:,.2f}", delta=profit_delta)
+            with col4:
+                st.metric("Free Margin", f"${account.free_margin:,.2f}")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Account", f"#{account.login}")
+            with col2:
+                st.metric("Server", account.server[:20] + "..." if len(account.server) > 20 else account.server)
+            with col3:
+                leverage_text = "Unlimited" if account.leverage == 0 else f"1:{account.leverage}"
+                st.metric("Leverage", leverage_text)
+            with col4:
+                st.metric("Currency", account.currency)
+        
+        st.markdown("---")
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("### 📝 New Order")
+            
+            price_info = connector.get_current_price()
+            if price_info:
+                st.info(f"**Current Price** - Bid: ${price_info['bid']:,.2f} | Ask: ${price_info['ask']:,.2f}")
+            
+            order_type = st.selectbox("Order Type", ["BUY", "SELL"])
+            
+            volume = st.number_input(
+                "Volume (Lots)",
+                min_value=0.01,
+                max_value=10.0,
+                value=0.01,
+                step=0.01
+            )
+            
+            use_sl_tp = st.checkbox("Set SL/TP", value=True)
+            
+            sl_price = None
+            tp_price = None
+            
+            if use_sl_tp and price_info:
+                current_price = price_info['bid'] if order_type == "BUY" else price_info['ask']
+                atr = df['atr'].iloc[-1] if 'atr' in df.columns else 10
+                
+                if order_type == "BUY":
+                    default_sl = current_price - (atr * 2)
+                    default_tp = current_price + (atr * 3)
+                else:
+                    default_sl = current_price + (atr * 2)
+                    default_tp = current_price - (atr * 3)
+                
+                sl_price = st.number_input(
+                    "Stop Loss ($)",
+                    min_value=0.0,
+                    value=float(default_sl),
+                    step=0.5
+                )
+                
+                tp_price = st.number_input(
+                    "Take Profit ($)",
+                    min_value=0.0,
+                    value=float(default_tp),
+                    step=0.5
+                )
+            
+            if st.button(f"🚀 Place {order_type} Order", type="primary"):
+                with st.spinner("Placing order..."):
+                    ot = OrderType.BUY if order_type == "BUY" else OrderType.SELL
+                    result = connector.open_position(
+                        order_type=ot,
+                        volume=volume,
+                        sl=sl_price,
+                        tp=tp_price
+                    )
+                    
+                    if result.success:
+                        st.success(f"✅ {result.message} - Order #{result.order_id} @ ${result.price:,.2f}")
+                    else:
+                        st.error(f"❌ {result.message}")
+        
+        with col2:
+            st.markdown("### 📋 Open Positions")
+            
+            positions = connector.get_positions()
+            
+            if positions:
+                for pos in positions:
+                    with st.container():
+                        pos_color = "🟢" if pos.profit >= 0 else "🔴"
+                        
+                        st.markdown(f"""
+                        **{pos_color} #{pos.ticket}** | {pos.type} {pos.volume} lots @ ${pos.price_open:,.2f}
+                        
+                        Current: ${pos.price_current:,.2f} | P/L: **${pos.profit:,.2f}**
+                        
+                        SL: ${pos.sl:,.2f} | TP: ${pos.tp:,.2f}
+                        """)
+                        
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            if st.button(f"Close #{pos.ticket}", key=f"close_{pos.ticket}"):
+                                result = connector.close_position(pos.ticket)
+                                if result.success:
+                                    st.success(result.message)
+                                    st.rerun()
+                                else:
+                                    st.error(result.message)
+                        
+                        st.markdown("---")
+            else:
+                st.info("No open positions")
+            
+            if st.button("🔄 Refresh Positions"):
+                st.rerun()
+        
+        st.markdown("---")
+        st.markdown("### 📈 Quick Analysis")
+        
+        signal_gen = SignalGenerator(df)
+        recommendation = signal_gen.get_current_recommendation()
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if recommendation['action'] == 'BUY':
+                st.success(f"**Signal: {recommendation['action']}**")
+            elif recommendation['action'] == 'SELL':
+                st.error(f"**Signal: {recommendation['action']}**")
+            else:
+                st.warning(f"**Signal: {recommendation['action']}**")
+        
+        with col2:
+            st.metric("Confidence", f"{recommendation['confidence']:.1%}")
+        
+        with col3:
+            st.write(f"**Reason:** {recommendation['reason']}")
+        
+        if isinstance(connector, MT5SimulatorConnector):
+            st.markdown("---")
+            st.warning("⚠️ **Demo Mode**: This is a simulated trading environment. No real trades are being executed.")
+    
+    else:
+        st.info("👆 Click 'Connect MT5' to start trading")
+        
+        st.markdown("""
+        ### 📋 Connection Info
+        
+        **Account Details:**
+        - Login: `412070670`
+        - Server: `Exness-MT5Real8`
+        - Account Type: Zero (0.05 USD commission, 0.00 spread)
+        - Leverage: Unlimited
+        
+        **Note:** 
+        - MetaTrader5 package only works on Windows
+        - Use Demo Mode for testing on other platforms
+        - Real trading requires MT5 terminal installed
+        """)
+
+
 def main():
     """Main application entry point"""
     render_header()
@@ -614,12 +828,13 @@ def main():
         st.error("Unable to load data. Please try again or use sample data.")
         return
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Dashboard",
         "📈 Signals",
         "🔍 Analysis",
         "💰 Risk",
-        "🔬 Backtest"
+        "🔬 Backtest",
+        "🤖 Trading"
     ])
     
     with tab1:
@@ -636,6 +851,9 @@ def main():
     
     with tab5:
         render_backtest_tab(df, settings)
+    
+    with tab6:
+        render_trading_tab(df, settings)
     
     st.markdown("---")
     st.markdown(
