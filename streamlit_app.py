@@ -33,6 +33,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+REFRESH_INTERVAL = 30
+
 st.markdown("""
 <style>
     .main-header {
@@ -77,7 +79,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def load_data(period: str = "1y", interval: str = "1d", use_sample: bool = False):
     """Load XAUUSD data with caching"""
     if use_sample:
@@ -96,11 +98,36 @@ def load_data(period: str = "1y", interval: str = "1d", use_sample: bool = False
     return df
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def get_current_price_info():
-    """Get current price information"""
+    """Get current price information - updates every 10 seconds"""
     fetcher = XAUUSDDataFetcher()
     return fetcher.get_current_price()
+
+
+@st.cache_data(ttl=5)
+def get_realtime_price():
+    """Get realtime price - updates every 5 seconds"""
+    import yfinance as yf
+    try:
+        ticker = yf.Ticker("GC=F")
+        data = ticker.history(period="1d", interval="1m")
+        if not data.empty:
+            last_row = data.iloc[-1]
+            prev_close = data.iloc[0]['Open']
+            current = last_row['Close']
+            return {
+                'price': current,
+                'open': data.iloc[0]['Open'],
+                'high': data['High'].max(),
+                'low': data['Low'].min(),
+                'change': current - prev_close,
+                'change_percent': ((current - prev_close) / prev_close) * 100,
+                'time': data.index[-1]
+            }
+    except:
+        pass
+    return None
 
 
 def render_header():
@@ -112,48 +139,62 @@ def render_header():
 
 
 def render_price_overview(df: pd.DataFrame):
-    """Render price overview section"""
-    current_price = df['close'].iloc[-1]
-    prev_price = df['close'].iloc[-2]
-    change = current_price - prev_price
-    change_pct = (change / prev_price) * 100
+    """Render price overview section with realtime data"""
     
-    high_24h = df['high'].iloc[-1]
-    low_24h = df['low'].iloc[-1]
+    realtime = get_realtime_price()
+    
+    if realtime:
+        current_price = realtime['price']
+        change = realtime['change']
+        change_pct = realtime['change_percent']
+        high_24h = realtime['high']
+        low_24h = realtime['low']
+        last_update = realtime['time']
+    else:
+        current_price = df['close'].iloc[-1]
+        prev_price = df['close'].iloc[-2]
+        change = current_price - prev_price
+        change_pct = (change / prev_price) * 100
+        high_24h = df['high'].iloc[-1]
+        low_24h = df['low'].iloc[-1]
+        last_update = df.index[-1]
     
     analysis = analyze_trend(df)
+    
+    st.markdown(f"**🕐 Last Update:** {last_update}")
     
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
+        delta_color = "normal" if change >= 0 else "inverse"
         st.metric(
-            label="XAUUSD Price",
+            label="🥇 XAUUSD Price",
             value=f"${current_price:,.2f}",
             delta=f"{change:+.2f} ({change_pct:+.2f}%)"
         )
     
     with col2:
         st.metric(
-            label="24H High",
+            label="📈 24H High",
             value=f"${high_24h:,.2f}"
         )
     
     with col3:
         st.metric(
-            label="24H Low",
+            label="📉 24H Low",
             value=f"${low_24h:,.2f}"
         )
     
     with col4:
         trend_color = "🟢" if analysis['trend'] == 'BULLISH' else "🔴" if analysis['trend'] == 'BEARISH' else "🟡"
         st.metric(
-            label="Trend",
+            label="📊 Trend",
             value=f"{trend_color} {analysis['trend']}"
         )
     
     with col5:
         st.metric(
-            label="Strength",
+            label="💪 Strength",
             value=f"{analysis['strength']}%"
         )
 
@@ -232,6 +273,15 @@ def render_sidebar():
 
 def render_dashboard_tab(df: pd.DataFrame, settings: dict):
     """Render main dashboard tab"""
+    
+    col_refresh, col_status = st.columns([1, 4])
+    with col_refresh:
+        if st.button("🔄 Refresh Price"):
+            st.cache_data.clear()
+            st.rerun()
+    with col_status:
+        st.markdown("_💡 Click refresh to get latest price | Data updates every ~10 seconds_")
+    
     render_price_overview(df)
     
     st.markdown("---")
