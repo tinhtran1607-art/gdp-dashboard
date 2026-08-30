@@ -875,7 +875,667 @@ Mitigation Block là vùng giá nơi Smart Money đã từng thua lỗ và sẽ 
 
 ---
 
-## 12. SMC Trading Strategy Template
+## 12. Japanese Candlestick Patterns (Mô Hình Nến Nhật)
+
+Candlestick patterns là công cụ quan trọng để xác nhận entry trong SMC. Khi kết hợp với OB, FVG, và liquidity concepts, độ chính xác sẽ tăng đáng kể.
+
+### 12.1 Cấu Trúc Cơ Bản Của Nến
+
+```
+    BULLISH CANDLE              BEARISH CANDLE
+    
+         │                           │
+         │ Upper Wick               │ Upper Wick
+         │ (Bóng trên)              │ (Bóng trên)
+    ┌────┴────┐                ┌────┴────┐
+    │         │ ← Close        │         │ ← Open
+    │  GREEN  │                │   RED   │
+    │  BODY   │                │  BODY   │
+    │         │ ← Open         │         │ ← Close
+    └────┬────┘                └────┬────┘
+         │ Lower Wick               │ Lower Wick
+         │ (Bóng dưới)              │ (Bóng dưới)
+         │                           │
+```
+
+**Các thành phần:**
+- **Body (Thân nến)**: Khoảng cách giữa Open và Close
+- **Upper Wick/Shadow**: Khoảng cách từ thân đến High
+- **Lower Wick/Shadow**: Khoảng cách từ thân đến Low
+- **Range**: Khoảng cách từ High đến Low
+
+---
+
+### 12.2 Single Candlestick Patterns (Mô Hình 1 Nến)
+
+#### 12.2.1 Doji (Nến Doji)
+
+```
+    DOJI PATTERNS
+    
+    Standard     Long-legged    Dragonfly     Gravestone
+      Doji          Doji          Doji          Doji
+    
+       │              │             │              
+       │              │             │            ┌─┐
+      ─┼─            ─┼─           ─┼─           └┬┘
+       │              │             │             │
+       │              │            ┌┴┐            │
+                                  └─┘             
+```
+
+**Đặc điểm:**
+- Open ≈ Close (thân rất nhỏ hoặc không có)
+- Thể hiện sự do dự của thị trường
+- **Dragonfly Doji**: Bullish reversal signal (bóng dưới dài)
+- **Gravestone Doji**: Bearish reversal signal (bóng trên dài)
+
+**Trading với SMC:**
+- Doji tại Order Block = strong reversal signal
+- Doji sau liquidity sweep = confirmation để entry
+
+```python
+def is_doji(open_price, high, low, close, threshold=0.1):
+    """Xác định nến Doji"""
+    body = abs(close - open_price)
+    range_size = high - low
+    
+    if range_size == 0:
+        return False
+    
+    return (body / range_size) <= threshold
+```
+
+---
+
+#### 12.2.2 Hammer & Hanging Man
+
+```
+    HAMMER                    HANGING MAN
+    (Bullish - đáy)          (Bearish - đỉnh)
+    
+       ┌─┐                       ┌─┐
+       │█│ ← Small body          │█│ ← Small body
+       └┬┘                       └┬┘
+        │                         │
+        │ ← Long lower wick       │ ← Long lower wick
+        │   (≥2x body)            │   (≥2x body)
+        │                         │
+    
+    Xuất hiện sau                Xuất hiện sau
+    DOWNTREND                    UPTREND
+```
+
+**Điều kiện:**
+- Bóng dưới ≥ 2 lần thân nến
+- Bóng trên rất nhỏ hoặc không có
+- Thân nến nhỏ ở phần trên của range
+
+```python
+def is_hammer(open_price, high, low, close):
+    """Xác định nến Hammer/Hanging Man"""
+    body = abs(close - open_price)
+    lower_wick = min(open_price, close) - low
+    upper_wick = high - max(open_price, close)
+    
+    if body == 0:
+        return False
+    
+    return (lower_wick >= 2 * body) and (upper_wick <= body * 0.3)
+```
+
+---
+
+#### 12.2.3 Inverted Hammer & Shooting Star
+
+```
+    INVERTED HAMMER           SHOOTING STAR
+    (Bullish - đáy)          (Bearish - đỉnh)
+    
+        │                         │
+        │ ← Long upper wick       │ ← Long upper wick
+        │   (≥2x body)            │   (≥2x body)
+       ┌┴┐                       ┌┴┐
+       │█│ ← Small body          │█│ ← Small body
+       └─┘                       └─┘
+    
+    Xuất hiện sau                Xuất hiện sau
+    DOWNTREND                    UPTREND
+```
+
+**Điều kiện:**
+- Bóng trên ≥ 2 lần thân nến
+- Bóng dưới rất nhỏ hoặc không có
+- Thân nến nhỏ ở phần dưới của range
+
+```python
+def is_shooting_star(open_price, high, low, close):
+    """Xác định Shooting Star/Inverted Hammer"""
+    body = abs(close - open_price)
+    upper_wick = high - max(open_price, close)
+    lower_wick = min(open_price, close) - low
+    
+    if body == 0:
+        return False
+    
+    return (upper_wick >= 2 * body) and (lower_wick <= body * 0.3)
+```
+
+---
+
+#### 12.2.4 Marubozu (Nến Marubozu)
+
+```
+    BULLISH MARUBOZU          BEARISH MARUBOZU
+    
+    ┌─────────────┐           ┌─────────────┐
+    │             │           │█████████████│
+    │             │           │█████████████│
+    │   GREEN     │           │████ RED ████│
+    │             │           │█████████████│
+    │             │           │█████████████│
+    └─────────────┘           └─────────────┘
+    
+    Không có bóng             Không có bóng
+    = Strong buying           = Strong selling
+```
+
+**Đặc điểm:**
+- Không có bóng hoặc bóng rất nhỏ
+- Thể hiện momentum cực mạnh
+- Bullish Marubozu: Open = Low, Close = High
+- Bearish Marubozu: Open = High, Close = Low
+
+```python
+def is_marubozu(open_price, high, low, close, threshold=0.02):
+    """Xác định nến Marubozu"""
+    range_size = high - low
+    
+    if range_size == 0:
+        return False, None
+    
+    upper_wick = high - max(open_price, close)
+    lower_wick = min(open_price, close) - low
+    
+    is_full_body = (upper_wick / range_size <= threshold) and \
+                   (lower_wick / range_size <= threshold)
+    
+    if is_full_body:
+        if close > open_price:
+            return True, 'BULLISH'
+        else:
+            return True, 'BEARISH'
+    
+    return False, None
+```
+
+---
+
+#### 12.2.5 Spinning Top
+
+```
+    SPINNING TOP
+    
+         │
+         │ ← Upper wick
+        ┌┴┐
+        │█│ ← Small body
+        └┬┘
+         │ ← Lower wick
+         │
+    
+    Bóng trên ≈ Bóng dưới
+    Thân nhỏ ở giữa
+```
+
+**Ý nghĩa:**
+- Sự do dự của thị trường
+- Cần confirmation từ nến tiếp theo
+- Tại key level = potential reversal
+
+---
+
+### 12.3 Double Candlestick Patterns (Mô Hình 2 Nến)
+
+#### 12.3.1 Engulfing Pattern (Mô Hình Nhấn Chìm)
+
+```
+    BULLISH ENGULFING         BEARISH ENGULFING
+    
+        ┌───┐                     ┌───────┐
+        │███│                     │       │
+        │███│ ← Nến 1             │       │
+        └───┘                     │       │ ← Nến 2
+    ┌─────────┐                   │       │
+    │         │                   └───────┘
+    │         │ ← Nến 2               ┌───┐
+    │         │                       │███│
+    │         │                       │███│ ← Nến 1
+    └─────────┘                       └───┘
+    
+    Nến 2 (xanh) bao trùm         Nến 2 (đỏ) bao trùm
+    hoàn toàn nến 1 (đỏ)          hoàn toàn nến 1 (xanh)
+```
+
+**Điều kiện:**
+- Thân nến 2 bao trùm hoàn toàn thân nến 1
+- Nến 1 và nến 2 ngược màu
+- Volume của nến 2 thường cao hơn
+
+**SMC Application:**
+- Bullish Engulfing tại Bullish OB = Strong BUY
+- Bearish Engulfing tại Bearish OB = Strong SELL
+- Engulfing sau liquidity sweep = High probability entry
+
+```python
+def is_engulfing(df, index):
+    """Xác định Engulfing pattern"""
+    if index < 1:
+        return False, None
+    
+    curr_open = df['open'].iloc[index]
+    curr_close = df['close'].iloc[index]
+    prev_open = df['open'].iloc[index - 1]
+    prev_close = df['close'].iloc[index - 1]
+    
+    curr_body_top = max(curr_open, curr_close)
+    curr_body_bottom = min(curr_open, curr_close)
+    prev_body_top = max(prev_open, prev_close)
+    prev_body_bottom = min(prev_open, prev_close)
+    
+    # Bullish Engulfing
+    if curr_close > curr_open and prev_close < prev_open:
+        if curr_body_top > prev_body_top and curr_body_bottom < prev_body_bottom:
+            return True, 'BULLISH'
+    
+    # Bearish Engulfing
+    if curr_close < curr_open and prev_close > prev_open:
+        if curr_body_top > prev_body_top and curr_body_bottom < prev_body_bottom:
+            return True, 'BEARISH'
+    
+    return False, None
+```
+
+---
+
+#### 12.3.2 Piercing Line & Dark Cloud Cover
+
+```
+    PIERCING LINE             DARK CLOUD COVER
+    (Bullish)                 (Bearish)
+    
+        ┌───┐                     ┌───┐
+        │███│ ← Nến 1 (đỏ)        │   │ ← Nến 1 (xanh)
+        │███│                     │   │
+        └───┘                     │   │
+    ┌─────┘                       └───┘
+    │   │                         ┌─────┐
+    │   │ ← Nến 2 (xanh)          │█████│ ← Nến 2 (đỏ)
+    │   │   Gap down              │█████│   Gap up
+    │   │   Close > 50%           │█████│   Close < 50%
+    └───┘   of Nến 1              └─────┘   of Nến 1
+```
+
+**Piercing Line:**
+- Nến 2 mở gap down dưới Low của nến 1
+- Close của nến 2 > 50% thân nến 1
+- Bullish reversal signal
+
+**Dark Cloud Cover:**
+- Nến 2 mở gap up trên High của nến 1
+- Close của nến 2 < 50% thân nến 1
+- Bearish reversal signal
+
+```python
+def is_piercing_or_dark_cloud(df, index):
+    """Xác định Piercing Line hoặc Dark Cloud Cover"""
+    if index < 1:
+        return False, None
+    
+    curr_open = df['open'].iloc[index]
+    curr_close = df['close'].iloc[index]
+    curr_low = df['low'].iloc[index]
+    curr_high = df['high'].iloc[index]
+    prev_open = df['open'].iloc[index - 1]
+    prev_close = df['close'].iloc[index - 1]
+    prev_high = df['high'].iloc[index - 1]
+    prev_low = df['low'].iloc[index - 1]
+    
+    prev_body = abs(prev_close - prev_open)
+    prev_midpoint = min(prev_open, prev_close) + (prev_body / 2)
+    
+    # Piercing Line
+    if prev_close < prev_open:  # Previous bearish
+        if curr_close > curr_open:  # Current bullish
+            if curr_open < prev_low:  # Gap down
+                if curr_close > prev_midpoint and curr_close < prev_open:
+                    return True, 'PIERCING'
+    
+    # Dark Cloud Cover
+    if prev_close > prev_open:  # Previous bullish
+        if curr_close < curr_open:  # Current bearish
+            if curr_open > prev_high:  # Gap up
+                if curr_close < prev_midpoint and curr_close > prev_open:
+                    return True, 'DARK_CLOUD'
+    
+    return False, None
+```
+
+---
+
+#### 12.3.3 Tweezer Top & Bottom
+
+```
+    TWEEZER TOP               TWEEZER BOTTOM
+    (Bearish)                 (Bullish)
+    
+    ┌───┐ ┌───┐               ┌───┐ ┌───┐
+    │   │ │███│               │███│ │   │
+    │   │ │███│               │███│ │   │
+    └─┬─┘ └─┬─┘               └─┬─┘ └─┬─┘
+      │     │                   │     │
+      └──┬──┘                   └──┬──┘
+         │                         │
+    Same High level           Same Low level
+```
+
+**Đặc điểm:**
+- Hai nến liên tiếp có cùng High (Top) hoặc Low (Bottom)
+- Nến đầu và nến sau thường ngược màu
+- Thể hiện rejection tại price level
+
+---
+
+### 12.4 Triple Candlestick Patterns (Mô Hình 3 Nến)
+
+#### 12.4.1 Morning Star & Evening Star
+
+```
+    MORNING STAR (Bullish)              EVENING STAR (Bearish)
+    
+        ┌───┐                               ┌───┐
+        │███│                               │   │
+        │███│                               │   │
+        │███│ ← Nến 1                       │   │ ← Nến 1
+        │███│   (Long bearish)              │   │   (Long bullish)
+        └───┘                               └───┘
+           └──┐                                └──┐
+             ┌┴┐ ← Nến 2                        ┌┴┐ ← Nến 2
+             └┬┘   (Small body/Doji)            └┬┘   (Small body/Doji)
+           ┌──┘                                ┌──┘
+        ┌──┴──┐                             ┌──┴──┐
+        │     │                             │█████│
+        │     │ ← Nến 3                     │█████│ ← Nến 3
+        │     │   (Long bullish)            │█████│   (Long bearish)
+        └─────┘                             └─────┘
+```
+
+**Morning Star (Sao Mai):**
+1. Nến 1: Long bearish candle
+2. Nến 2: Small body/Doji, gap down
+3. Nến 3: Long bullish candle, đóng cửa > 50% nến 1
+- **Signal**: Strong bullish reversal
+
+**Evening Star (Sao Hôm):**
+1. Nến 1: Long bullish candle
+2. Nến 2: Small body/Doji, gap up
+3. Nến 3: Long bearish candle, đóng cửa < 50% nến 1
+- **Signal**: Strong bearish reversal
+
+```python
+def is_morning_or_evening_star(df, index):
+    """Xác định Morning Star hoặc Evening Star"""
+    if index < 2:
+        return False, None
+    
+    # Candle 1 (oldest)
+    c1_open = df['open'].iloc[index - 2]
+    c1_close = df['close'].iloc[index - 2]
+    c1_body = abs(c1_close - c1_open)
+    
+    # Candle 2 (middle - star)
+    c2_open = df['open'].iloc[index - 1]
+    c2_close = df['close'].iloc[index - 1]
+    c2_body = abs(c2_close - c2_open)
+    
+    # Candle 3 (newest)
+    c3_open = df['open'].iloc[index]
+    c3_close = df['close'].iloc[index]
+    c3_body = abs(c3_close - c3_open)
+    
+    c1_midpoint = min(c1_open, c1_close) + (c1_body / 2)
+    
+    # Morning Star
+    if c1_close < c1_open:  # C1 bearish
+        if c2_body < c1_body * 0.3:  # C2 small body
+            if c3_close > c3_open:  # C3 bullish
+                if c3_close > c1_midpoint:
+                    return True, 'MORNING_STAR'
+    
+    # Evening Star
+    if c1_close > c1_open:  # C1 bullish
+        if c2_body < c1_body * 0.3:  # C2 small body
+            if c3_close < c3_open:  # C3 bearish
+                if c3_close < c1_midpoint:
+                    return True, 'EVENING_STAR'
+    
+    return False, None
+```
+
+---
+
+#### 12.4.2 Three White Soldiers & Three Black Crows
+
+```
+    THREE WHITE SOLDIERS       THREE BLACK CROWS
+    (Bullish)                  (Bearish)
+    
+              ┌───┐                  ┌───┐
+              │   │                  │███│
+              │   │ ← Nến 3          │███│ ← Nến 1
+           ┌──┴───┘                  │███│
+           │   │                     └───┴──┐
+           │   │ ← Nến 2                 │███│
+        ┌──┴───┘                         │███│ ← Nến 2
+        │   │                            │███│
+        │   │ ← Nến 1                    └───┴──┐
+        └───┘                                │███│
+                                             │███│ ← Nến 3
+                                             └───┘
+    
+    3 nến xanh liên tiếp          3 nến đỏ liên tiếp
+    Mỗi nến cao hơn nến trước     Mỗi nến thấp hơn nến trước
+```
+
+**Three White Soldiers:**
+- 3 nến bullish liên tiếp
+- Mỗi nến mở trong thân nến trước
+- Mỗi nến đóng cao hơn nến trước
+- **Signal**: Strong bullish continuation
+
+**Three Black Crows:**
+- 3 nến bearish liên tiếp
+- Mỗi nến mở trong thân nến trước
+- Mỗi nến đóng thấp hơn nến trước
+- **Signal**: Strong bearish continuation
+
+```python
+def is_three_soldiers_or_crows(df, index):
+    """Xác định Three White Soldiers hoặc Three Black Crows"""
+    if index < 2:
+        return False, None
+    
+    candles = []
+    for i in range(3):
+        candles.append({
+            'open': df['open'].iloc[index - 2 + i],
+            'close': df['close'].iloc[index - 2 + i],
+            'high': df['high'].iloc[index - 2 + i],
+            'low': df['low'].iloc[index - 2 + i]
+        })
+    
+    # Three White Soldiers
+    all_bullish = all(c['close'] > c['open'] for c in candles)
+    if all_bullish:
+        progressively_higher = (candles[1]['close'] > candles[0]['close'] and 
+                               candles[2]['close'] > candles[1]['close'])
+        opens_in_prev_body = (candles[1]['open'] > candles[0]['open'] and 
+                             candles[1]['open'] < candles[0]['close'] and
+                             candles[2]['open'] > candles[1]['open'] and 
+                             candles[2]['open'] < candles[1]['close'])
+        if progressively_higher and opens_in_prev_body:
+            return True, 'THREE_WHITE_SOLDIERS'
+    
+    # Three Black Crows
+    all_bearish = all(c['close'] < c['open'] for c in candles)
+    if all_bearish:
+        progressively_lower = (candles[1]['close'] < candles[0]['close'] and 
+                              candles[2]['close'] < candles[1]['close'])
+        opens_in_prev_body = (candles[1]['open'] < candles[0]['open'] and 
+                             candles[1]['open'] > candles[0]['close'] and
+                             candles[2]['open'] < candles[1]['open'] and 
+                             candles[2]['open'] > candles[1]['close'])
+        if progressively_lower and opens_in_prev_body:
+            return True, 'THREE_BLACK_CROWS'
+    
+    return False, None
+```
+
+---
+
+### 12.5 Continuation Patterns (Mô Hình Tiếp Diễn)
+
+#### 12.5.1 Rising & Falling Three Methods
+
+```
+    RISING THREE METHODS           FALLING THREE METHODS
+    (Bullish continuation)         (Bearish continuation)
+    
+              ┌─────┐                    ┌─────┐
+              │     │ ← Nến 5            │█████│ ← Nến 1
+              │     │                    │█████│
+    ┌─────┐   │     │                    └──┬──┘
+    │     │ ┌─┴┐    │                    ┌──┴──┐ ┌─────┐
+    │     │ │█│┌┴┐  │                    │  │  │ │█████│
+    │     │ └┬┘│█│  │                    │  │  │ │█████│
+    │     │  │ └┬┘┌─┴┐                   └──┬──┘ └──┬──┘
+    └─────┘  └──┴─┘                         │   ┌──┴──┐
+    Nến 1    2,3,4  Nến 5                   └───┤█████│ ← Nến 5
+                                               │█████│
+                                               └─────┘
+```
+
+---
+
+### 12.6 SMC + Candlestick Confluence
+
+#### High Probability Setups:
+
+| SMC Concept | Candlestick Pattern | Signal Strength |
+|-------------|---------------------|-----------------|
+| Bullish OB | Bullish Engulfing | ⭐⭐⭐⭐⭐ |
+| Bullish OB | Hammer | ⭐⭐⭐⭐ |
+| Bullish OB | Morning Star | ⭐⭐⭐⭐⭐ |
+| Bullish FVG | Bullish Engulfing | ⭐⭐⭐⭐ |
+| SSL Sweep | Hammer/Engulfing | ⭐⭐⭐⭐⭐ |
+| Bearish OB | Bearish Engulfing | ⭐⭐⭐⭐⭐ |
+| Bearish OB | Shooting Star | ⭐⭐⭐⭐ |
+| Bearish OB | Evening Star | ⭐⭐⭐⭐⭐ |
+| Bearish FVG | Bearish Engulfing | ⭐⭐⭐⭐ |
+| BSL Sweep | Shooting Star/Engulfing | ⭐⭐⭐⭐⭐ |
+
+#### Entry Checklist với Candlestick:
+
+```
+□ 1. Xác định POI (OB/FVG/Liquidity)
+□ 2. Chờ giá đến POI
+□ 3. Quan sát candlestick pattern tại POI:
+   □ Reversal pattern (Engulfing, Star, Hammer)
+   □ Rejection wick (long wick vào POI)
+□ 4. Entry sau khi pattern hoàn thành
+□ 5. SL đặt ngoài POI + pattern low/high
+□ 6. TP tại liquidity đối diện
+```
+
+### 12.7 Candlestick Analysis Code
+
+```python
+class CandlestickAnalyzer:
+    """Phân tích các mô hình nến Nhật"""
+    
+    def __init__(self, df):
+        self.df = df
+    
+    def analyze_all_patterns(self, index):
+        """Phân tích tất cả patterns tại một index"""
+        patterns = []
+        
+        # Single candle patterns
+        if self.is_doji(index):
+            patterns.append('DOJI')
+        if self.is_hammer(index):
+            patterns.append('HAMMER')
+        if self.is_shooting_star(index):
+            patterns.append('SHOOTING_STAR')
+        
+        # Double candle patterns
+        is_eng, eng_type = self.is_engulfing(index)
+        if is_eng:
+            patterns.append(f'{eng_type}_ENGULFING')
+        
+        # Triple candle patterns
+        is_star, star_type = self.is_morning_or_evening_star(index)
+        if is_star:
+            patterns.append(star_type)
+        
+        return patterns
+    
+    def get_signal_at_poi(self, index, poi_type):
+        """Lấy signal khi có pattern tại POI"""
+        patterns = self.analyze_all_patterns(index)
+        
+        bullish_patterns = ['HAMMER', 'BULLISH_ENGULFING', 'MORNING_STAR', 
+                          'PIERCING', 'THREE_WHITE_SOLDIERS']
+        bearish_patterns = ['SHOOTING_STAR', 'BEARISH_ENGULFING', 'EVENING_STAR',
+                          'DARK_CLOUD', 'THREE_BLACK_CROWS']
+        
+        if poi_type in ['BULLISH_OB', 'BULLISH_FVG', 'SSL']:
+            for p in patterns:
+                if p in bullish_patterns:
+                    return {'signal': 'BUY', 'pattern': p, 'strength': 'STRONG'}
+        
+        if poi_type in ['BEARISH_OB', 'BEARISH_FVG', 'BSL']:
+            for p in patterns:
+                if p in bearish_patterns:
+                    return {'signal': 'SELL', 'pattern': p, 'strength': 'STRONG'}
+        
+        return None
+```
+
+---
+
+### 12.8 Bảng Tổng Hợp Candlestick Patterns
+
+| Pattern | Loại | Số Nến | Ý Nghĩa | Độ Tin Cậy |
+|---------|------|--------|---------|------------|
+| Doji | Neutral | 1 | Do dự, đợi confirm | ⭐⭐ |
+| Hammer | Bullish | 1 | Reversal từ đáy | ⭐⭐⭐ |
+| Hanging Man | Bearish | 1 | Reversal từ đỉnh | ⭐⭐⭐ |
+| Shooting Star | Bearish | 1 | Reversal từ đỉnh | ⭐⭐⭐ |
+| Inverted Hammer | Bullish | 1 | Reversal từ đáy | ⭐⭐⭐ |
+| Marubozu | Continuation | 1 | Strong momentum | ⭐⭐⭐⭐ |
+| Engulfing | Reversal | 2 | Đảo chiều mạnh | ⭐⭐⭐⭐ |
+| Piercing Line | Bullish | 2 | Reversal từ đáy | ⭐⭐⭐ |
+| Dark Cloud | Bearish | 2 | Reversal từ đỉnh | ⭐⭐⭐ |
+| Tweezer | Reversal | 2 | Rejection level | ⭐⭐⭐ |
+| Morning Star | Bullish | 3 | Strong reversal | ⭐⭐⭐⭐⭐ |
+| Evening Star | Bearish | 3 | Strong reversal | ⭐⭐⭐⭐⭐ |
+| Three Soldiers | Bullish | 3 | Strong continuation | ⭐⭐⭐⭐ |
+| Three Crows | Bearish | 3 | Strong continuation | ⭐⭐⭐⭐ |
+
+---
+
+## 13. SMC Trading Strategy Template
 
 ### 12.1 Checklist trước khi Entry
 
