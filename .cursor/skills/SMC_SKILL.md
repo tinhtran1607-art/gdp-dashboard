@@ -879,6 +879,17 @@ Mitigation Block là vùng giá nơi Smart Money đã từng thua lỗ và sẽ 
 
 Candlestick patterns là công cụ quan trọng để xác nhận entry trong SMC. Khi kết hợp với OB, FVG, và liquidity concepts, độ chính xác sẽ tăng đáng kể.
 
+### 📸 Hình Ảnh Minh Họa
+
+Tất cả hình ảnh candlestick patterns được lưu tại: `docs/images/candlesticks/`
+
+**Grid Charts (Tổng hợp):**
+- `single_patterns_grid.png` - Tất cả mô hình 1 nến
+- `double_patterns_grid.png` - Tất cả mô hình 2 nến  
+- `triple_patterns_grid.png` - Tất cả mô hình 3 nến
+
+**Individual Charts:** Mỗi pattern có file riêng (vd: `hammer.png`, `bullish_engulfing.png`)
+
 ### 12.1 Cấu Trúc Cơ Bản Của Nến
 
 ```
@@ -909,6 +920,8 @@ Candlestick patterns là công cụ quan trọng để xác nhận entry trong S
 ### 12.2 Single Candlestick Patterns (Mô Hình 1 Nến)
 
 #### 12.2.1 Doji (Nến Doji)
+
+📷 **Hình ảnh:** `docs/images/candlesticks/doji.png`, `dragonfly_doji.png`, `gravestone_doji.png`
 
 ```
     DOJI PATTERNS
@@ -950,6 +963,8 @@ def is_doji(open_price, high, low, close, threshold=0.1):
 
 #### 12.2.2 Hammer & Hanging Man
 
+📷 **Hình ảnh:** `docs/images/candlesticks/hammer.png`, `hanging_man.png`
+
 ```
     HAMMER                    HANGING MAN
     (Bullish - đáy)          (Bearish - đỉnh)
@@ -988,6 +1003,8 @@ def is_hammer(open_price, high, low, close):
 
 #### 12.2.3 Inverted Hammer & Shooting Star
 
+📷 **Hình ảnh:** `docs/images/candlesticks/inverted_hammer.png`, `shooting_star.png`
+
 ```
     INVERTED HAMMER           SHOOTING STAR
     (Bullish - đáy)          (Bearish - đỉnh)
@@ -1024,6 +1041,8 @@ def is_shooting_star(open_price, high, low, close):
 ---
 
 #### 12.2.4 Marubozu (Nến Marubozu)
+
+📷 **Hình ảnh:** `docs/images/candlesticks/bullish_marubozu.png`, `bearish_marubozu.png`
 
 ```
     BULLISH MARUBOZU          BEARISH MARUBOZU
@@ -1099,6 +1118,8 @@ def is_marubozu(open_price, high, low, close, threshold=0.02):
 
 #### 12.3.1 Engulfing Pattern (Mô Hình Nhấn Chìm)
 
+📷 **Hình ảnh:** `docs/images/candlesticks/bullish_engulfing.png`, `bearish_engulfing.png`
+
 ```
     BULLISH ENGULFING         BEARISH ENGULFING
     
@@ -1159,6 +1180,8 @@ def is_engulfing(df, index):
 ---
 
 #### 12.3.2 Piercing Line & Dark Cloud Cover
+
+📷 **Hình ảnh:** `docs/images/candlesticks/piercing_line.png`, `dark_cloud_cover.png`
 
 ```
     PIERCING LINE             DARK CLOUD COVER
@@ -1225,6 +1248,8 @@ def is_piercing_or_dark_cloud(df, index):
 
 #### 12.3.3 Tweezer Top & Bottom
 
+📷 **Hình ảnh:** `docs/images/candlesticks/tweezer_top.png`, `tweezer_bottom.png`
+
 ```
     TWEEZER TOP               TWEEZER BOTTOM
     (Bearish)                 (Bullish)
@@ -1249,6 +1274,8 @@ def is_piercing_or_dark_cloud(df, index):
 ### 12.4 Triple Candlestick Patterns (Mô Hình 3 Nến)
 
 #### 12.4.1 Morning Star & Evening Star
+
+📷 **Hình ảnh:** `docs/images/candlesticks/morning_star.png`, `evening_star.png`
 
 ```
     MORNING STAR (Bullish)              EVENING STAR (Bearish)
@@ -1325,6 +1352,8 @@ def is_morning_or_evening_star(df, index):
 ---
 
 #### 12.4.2 Three White Soldiers & Three Black Crows
+
+📷 **Hình ảnh:** `docs/images/candlesticks/three_white_soldiers.png`, `three_black_crows.png`
 
 ```
     THREE WHITE SOLDIERS       THREE BLACK CROWS
